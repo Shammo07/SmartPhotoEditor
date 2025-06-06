@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Smart Photo Editor</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background-color: #f4f4f4;
+        }
+
+        .container {
+            max-width: 800px;
+        }
+
+        .image-container img {
+            max-width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .slider-container {
+            display: none;
+            margin-top: 10px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        #previewSection {
+            transition: all 0.3s ease;
+        }
+
+        #previewImage {
+            max-width: 100%;
+            height: auto;
+        }
+
+        #previewLoading {
+            color: #666;
+            font-style: italic;
+            font-size: 0.8em;
+        }
+
+        #crop-selection {
+            pointer-events: none;
+        }
+
+        #crop-overlay {
+            z-index: 1;
+        }
+
+        #crop-selection {
+            z-index: 2;
+        }
+
+        #crop-source {
+            max-height: 400px;
+        }
+    </style>
+</head>
+
+<body {% if photo %}data-photo-id="{{ photo.id }}" {% endif %}>
+    <div class="container mt-5 text-center">
+        <h1 class="mb-4">Smart Photo Editor</h1>
+
+        <!-- Upload Dropdown -->
+        <div class="dropdown mb-4">
+            <button class="btn btn-success dropdown-toggle" type="button" id="uploadDropdown" data-bs-toggle="dropdown"
+                aria-expanded="false">
+                Upload Image
+            </button>
+            <ul class="dropdown-menu p-3 shadow w-100" style="max-width: 600px;" aria-labelledby="uploadDropdown">
+                <li>
+                    <h5 class="text-center">Upload an Image</h5>
+                    <form method="POST" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        {{ form.as_p }}
+                        <button type="submit" class="btn btn-primary mt-2">Upload</button>
+                    </form>
+                </li>
+            </ul>
+
+            {% if photo and photo.original %}
+            <!-- Edit Options -->
+            <div class="mt-4">
+                <h2>Edit Image</h2>
+                <div class="btn-group">
+                    <button class="btn btn-primary dropdown-toggle" type="button" id="imageProcessingDropdown"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                        Apply Filter
+                    </button>
+                    <ul class="dropdown-menu" aria-labelledby="imageProcessingDropdown">
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'black_white' %}">Black &
+                                White</a></li>
+                        <li><a class="dropdown-item filter-option" href="#" data-action="blur">Adjust Blur</a></li>
+                        <li><a class="dropdown-item filter-option" href="#" data-action="sharpen">Adjust Sharpness</a></li>
+                        <li><a class="dropdown-item filter-option" href="#" data-action="brightness">Adjust
+                                Brightness</a></li>
+                        <li><a class="dropdown-item filter-option" href="#" data-action="contrast">Adjust Contrast</a>
+                        </li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'invert' %}">Invert Colors</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'cool_tone' %}">Cool Tone</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'warm_tone' %}">Warm Tone</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'vibrant' %}">Vibrant Effect</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'red_highlight' %}">Red Highlight Filter</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'sepia' %}">Sepia Effect</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'vintage' %}">Vintage Filter</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'noir' %}">Noir Filter</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'neon' %}">Neon Filter</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'polaroid' %}">Polaroid Effect</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'watercolor' %}">Watercolor Style</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'black_gold' %}">Black Gold Effect</a></li>
+                        <li><a class="dropdown-item" href="{% url 'process_image' photo.id 'lomography' %}">Lomography Effect</a></li>
+                    </ul>
+                    <a href="{% url 'process_image' photo.id 'face_detect' %}" class="btn btn-secondary mx-1">Detect
+                        Faces</a>
+                    <a href="{% url 'process_image' photo.id 'portrait' %}" class="btn btn-dark mx-1">Apply Portrait Mode</a>
+                    <a href="#" data-action="rotate" class="btn btn-warning filter-option mx-1">Rotate Photo</a>
+                    <a href="#" data-action="crop" class="btn btn-info filter-option mx-2">Crop Photo</a>
+                    <a href="{% url 'process_image' photo.id 'detect_objects' %}" class="btn btn-success mx-1">Detect Objects</a>
+                    <a href="{% url 'process_image' photo.id 'default' %}" class="btn btn-danger mx-1">Delete
+                        Changes</a>
+                </div>
+
+
+                <!-- Blur Slider Controls -->
+                <div id="blur-slider" class="slider-container">
+                    <form method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="photo_id" value="{{ photo.id }}">
+                        <input type="hidden" name="action" value="blur">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label for="blur-intensity" class="form-label mb-0">Blur Intensity (1-10)</label>
+                            <span id="blur-value" class="badge bg-primary">2</span>
+                        </div>
+                        <input type="range" class="form-range" min="1" max="10" step="0.5" id="blur-intensity"
+                            name="intensity" value="2">
+                        <button type="submit" name="apply_filter" class="btn btn-primary mt-2">Apply Blur</button>
+                        <button type="button" class="btn btn-danger mt-2 cancel-button"
+                            data-target="#blur-slider">Cancel</button>
+                    </form>
+                </div>
+
+                <!-- Rotate Slider -->
+                <div id="rotate-slider" class="slider-container">
+                    <form method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="photo_id" value="{{ photo.id }}">
+                        <input type="hidden" name="action" value="rotate">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label for="rotate-intensity" class="form-label mb-0">Rotate (0-360°)</label>
+                            <span id="rotate-value" class="badge bg-primary">0</span>
+                        </div>
+                        <input type="range" class="form-range" min="0" max="360" step="1" id="rotate-intensity"
+                            name="intensity" value="0">
+
+                        <!-- Buttons to set specific rotation values -->
+                        <div class="btn-group mt-2" role="group">
+                            <button type="button" class="btn btn-secondary" onclick="setRotationValue(90)">90°</button>
+                            <button type="button" class="btn btn-secondary"
+                                onclick="setRotationValue(180)">180°</button>
+                            <button type="button" class="btn btn-secondary"
+                                onclick="setRotationValue(270)">270°</button>
+                            <button type="button" class="btn btn-secondary"
+                                onclick="setRotationValue(360)">360°</button>
+                        </div>
+
+                        <button type="submit" name="apply_filter" class="btn btn-primary mt-2">Apply Rotation</button>
+                        <button type="button" class="btn btn-danger mt-2 cancel-button"
+                            data-target="#rotate-slider">Cancel</button>
+                    </form>
+                </div>
+
+                <!-- Sharpen Slider Controls -->
+                <div id="sharpen-slider" class="slider-container">
+                    <form method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="photo_id" value="{{ photo.id }}">
+                        <input type="hidden" name="action" value="sharpen">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label for="sharpen-intensity" class="form-label mb-0">Sharpen Intensity (0-5)</label>
+                            <span id="sharpen-value" class="badge bg-primary">1</span>
+                        </div>
+                        <input type="range" class="form-range" min="0" max="5" step="0.1" id="sharpen-intensity"
+                            name="intensity" value="1">
+                        <button type="submit" name="apply_filter" class="btn btn-primary mt-2">Apply Sharpen</button>
+                        <button type="button" class="btn btn-danger mt-2 cancel-button"
+                            data-target="#sharpen-slider">Cancel</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Brightness Slider -->
+            <div id="brightness-slider" class="slider-container">
+                <form method="POST">
+                    {% csrf_token %}
+                    <input type="hidden" name="photo_id" value="{{ photo.id }}">
+                    <input type="hidden" name="action" value="brightness">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label for="brightness-intensity" class="form-label mb-0">Brightness (0.2-2)</label>
+                        <span id="brightness-value" class="badge bg-primary">1</span>
+                    </div>
+                    <input type="range" class="form-range" min="0.2" max="2" step="0.1" id="brightness-intensity"
+                        name="intensity" value="1">
+                    <button type="submit" name="apply_filter" class="btn btn-primary mt-2">Apply Brightness</button>
+                    <button type="button" class="btn btn-danger mt-2 cancel-button"
+                        data-target="#brightness-slider">Cancel</button>
+                </form>
+            </div>
+
+            <!-- Contrast Slider -->
+            <div id="contrast-slider" class="slider-container">
+                <form method="POST">
+                    {% csrf_token %}
+                    <input type="hidden" name="photo_id" value="{{ photo.id }}">
+                    <input type="hidden" name="action" value="contrast">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label for="contrast-intensity" class="form-label mb-0">Contrast (0.2-2)</label>
+                        <span id="contrast-value" class="badge bg-primary">1</span>
+                    </div>
+                    <input type="range" class="form-range" min="0.2" max="2" step="0.1" id="contrast-intensity"
+                        name="intensity" value="1">
+                    <button type="submit" name="apply_filter" class="btn btn-primary mt-2">Apply Contrast</button>
+                    <button type="button" class="btn btn-danger mt-2 cancel-button"
+                        data-target="#contrast-slider">Cancel</button>
+                </form>
+            </div>
+
+            <!-- Crop Controls -->
+            <div id="crop-slider" class="slider-container">
+                <form method="POST">
+                    {% csrf_token %}
+                    <input type="hidden" name="photo_id" value="{{ photo.id }}">
+                    <input type="hidden" name="action" value="crop">
+                    <input type="hidden" name="x" id="crop-x" value="0">
+                    <input type="hidden" name="y" id="crop-y" value="0">
+                    <input type="hidden" name="width" id="crop-width" value="100">
+                    <input type="hidden" name="height" id="crop-height" value="100">
+
+                    <div class="mb-3">
+                        <p>Drag to select crop area</p>
+                        <div style="position: relative; display: inline-block;">
+                            <img id="crop-source"
+                                src="{% if photo.edited %}{{ photo.edited.url }}{% else %}{{ photo.original.url }}{% endif %}"
+                                style="max-width: 100%; display: block;">
+                            <div id="crop-overlay"
+                                style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; cursor: crosshair;">
+                            </div>
+                            <div id="crop-selection"
+                                style="position: absolute; border: 2px dashed #fff; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); display: none;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" name="apply_filter" class="btn btn-primary mt-2">Apply Crop</button>
+                    <button type="button" class="btn btn-danger mt-2 cancel-button"
+                        data-target="#crop-slider">Cancel</button>
+                </form>
+            </div>
+
+            <!-- Image Display -->
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <h3>Original Image</h3>
+                    <img src="{{ photo.original.url }}" alt="Uploaded Image" class="img-fluid rounded shadow">
+                </div>
+
+                {% if photo.edited %}
+                <div class="col-md-6" id="editedImageSection">
+                    <h3>Edited Image</h3>
+                    <img src="{{ photo.edited.url }}" alt="Edited Image" class="img-fluid rounded shadow">
+                    <a class="btn btn-primary mt-2" href="{{ photo.edited.url }}" download>Download Edited Image</a>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- View edited image before applying change -->
+            <div class="col-md-6" id="previewSection" style="display: none;">
+                <h3>Live Preview <span id="previewLoading" style="display: none;">(processing...)</span></h3>
+                <img id="previewImage" src="" alt="Preview Image" class="img-fluid rounded shadow">
+                <p class="text-muted mt-2">This shows the result that will be applied.</p>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                // Show/hide sliders when filter options are clicked
+                document.querySelectorAll('.filter-option').forEach(item => {
+                    item.addEventListener('click', function (e) {
+                        e.preventDefault();
+                        const action = this.getAttribute('data-action');
+
+                        // Hide all sliders first
+                        document.querySelectorAll('.slider-container').forEach(slider => {
+                            slider.style.display = 'none';
+                        });
+
+                        // Show the selected slider
+                        const slider = document.getElementById(`${action}-slider`);
+                        if (slider) {
+                            slider.style.display = 'block';
+                        }
+                    });
+                });
+
+                // Update blur value display
+                const blurSlider = document.getElementById('blur-intensity');
+                const blurValue = document.getElementById('blur-value');
+                blurSlider.addEventListener('input', function () {
+                    blurValue.textContent = this.value;
+                });
+
+                // Update sharpen value display
+                const sharpenSlider = document.getElementById('sharpen-intensity');
+                const sharpenValue = document.getElementById('sharpen-value');
+                sharpenSlider.addEventListener('input', function () {
+                    sharpenValue.textContent = this.value;
+                });
+
+                // Update brightness value display
+                const brightnessSlider = document.getElementById('brightness-intensity');
+                const brightnessValue = document.getElementById('brightness-value');
+                brightnessSlider.addEventListener('input', function () {
+                    brightnessValue.textContent = this.value;
+                });
+
+                // Update contrast value display
+                const contrastSlider = document.getElementById('contrast-intensity');
+                const contrastValue = document.getElementById('contrast-value');
+                contrastSlider.addEventListener('input', function () {
+                    contrastValue.textContent = this.value;
+                });
+
+                // Update rotate value display
+                const rotateSlider = document.getElementById('rotate-intensity');
+                const rotataeValue = document.getElementById('rotate-value');
+                rotateSlider.addEventListener('input', function () {
+                    rotataeValue.textContent = this.value;
+                });
+
+
+                // Store references to important elements
+                const originalImage = document.querySelector('.col-md-6 img[alt="Uploaded Image"]');
+                const editedImage = document.querySelector('.col-md-6 img[alt="Edited Image"]');
+                const previewImage = document.getElementById('previewImage');
+                const previewSection = document.getElementById('previewSection');
+                const previewLoading = document.getElementById('previewLoading');
+
+                // Get photo ID from data attribute (add this to your HTML)
+                const photoId = document.body.getAttribute('data-photo-id');
+
+                // Use edited image if available, otherwise original
+                const sourceImage = editedImage ? editedImage : originalImage;
+
+                // Track active requests
+                let previewTimeout;
+                let currentPreviewRequest = null;
+
+                // Function to update preview with server-side processing
+                function updatePreview(action, value) {
+                    // Cancel any pending request
+                    if (currentPreviewRequest) {
+                        currentPreviewRequest.abort();
+                    }
+
+                    // Clear any pending timeout
+                    clearTimeout(previewTimeout);
+
+                    // Show loading state
+                    previewImage.style.opacity = '0.5';
+                    if (previewLoading) previewLoading.style.display = 'inline';
+                    if (previewSection) previewSection.style.display = 'block';
+
+                    // Debounce the requests (300ms delay)
+                    previewTimeout = setTimeout(() => {
+                        currentPreviewRequest = new XMLHttpRequest();
+                        currentPreviewRequest.open('POST', '/preview-image/', true);
+                        currentPreviewRequest.setRequestHeader('Content-Type', 'application/json');
+                        currentPreviewRequest.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+                        // Get CSRF token
+                        const csrfToken = getCookie('csrftoken');
+                        if (csrfToken) {
+                            currentPreviewRequest.setRequestHeader('X-CSRFToken', csrfToken);
+                        }
+
+                        currentPreviewRequest.onload = function () {
+                            if (this.status === 200) {
+                                try {
+                                    const response = JSON.parse(this.responseText);
+                                    if (response.success && previewImage) {
+                                        previewImage.src = response.preview_url + '?t=' + Date.now();
+                                        previewImage.onload = function () {
+                                            if (previewImage) previewImage.style.opacity = '1';
+                                            if (previewLoading) previewLoading.style.display = 'none';
+                                            currentPreviewRequest = null;
+                                        };
+                                    }
+                                } catch (e) {
+                                    console.error('Error parsing response', e);
+                                }
+                            }
+                            if (previewLoading) previewLoading.style.display = 'none';
+                        };
+
+                        currentPreviewRequest.onerror = function () {
+                            if (previewLoading) previewLoading.style.display = 'none';
+                            console.error('Preview request error');
+                        };
+
+                        // Send the request with proper data
+                        const requestData = {
+                            photo_id: photoId,
+                            action: action,
+                            value: value
+                        };
+
+                        currentPreviewRequest.send(JSON.stringify(requestData));
+                    }, 300);
+                }
+
+                // Helper function to get CSRF token
+                function getCookie(name) {
+                    let cookieValue = null;
+                    if (document.cookie && document.cookie !== '') {
+                        const cookies = document.cookie.split(';');
+                        for (let i = 0; i < cookies.length; i++) {
+                            const cookie = cookies[i].trim();
+                            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                                break;
+                            }
+                        }
+                    }
+                    return cookieValue;
+                }
+
+                // Initialize slider functionality
+                function initSliders() {
+                    // Update slider event listeners
+                    document.querySelectorAll('.filter-option').forEach(item => {
+                        item.addEventListener('click', function (e) {
+                            e.preventDefault();
+                            const action = this.getAttribute('data-action');
+
+                            // Hide all sliders first
+                            document.querySelectorAll('.slider-container').forEach(slider => {
+                                if (slider) slider.style.display = 'none';
+                            });
+
+                            // Show the selected slider
+                            const slider = document.getElementById(`${action}-slider`);
+                            if (slider) {
+                                slider.style.display = 'block';
+                            }
+
+                            // Hide preview when switching filters
+                            if (previewSection) previewSection.style.display = 'none';
+                        });
+                    });
+
+                    // Initialize sliders with live preview
+                    const sliders = {
+                        'blur': document.getElementById('blur-intensity'),
+                        'sharpen': document.getElementById('sharpen-intensity'),
+                        'brightness': document.getElementById('brightness-intensity'),
+                        'contrast': document.getElementById('contrast-intensity'),
+                        'rotate': document.getElementById('rotate-intensity')
+                    };
+
+                    Object.keys(sliders).forEach(action => {
+                        const slider = sliders[action];
+                        const valueDisplay = document.getElementById(`${action}-value`);
+
+                        if (slider && valueDisplay) {
+                            // Set initial value display
+                            valueDisplay.textContent = slider.value;
+
+                            // Add input event listener
+                            slider.addEventListener('input', function () {
+                                valueDisplay.textContent = this.value;
+                                updatePreview(action, parseFloat(this.value));
+                            });
+                        }
+                    });
+                }
+
+                function initCrop() {
+                    const cropSource = document.getElementById('crop-source');
+                    const cropOverlay = document.getElementById('crop-overlay');
+                    const cropSelection = document.getElementById('crop-selection');
+                    const cropXInput = document.getElementById('crop-x');
+                    const cropYInput = document.getElementById('crop-y');
+                    const cropWidthInput = document.getElementById('crop-width');
+                    const cropHeightInput = document.getElementById('crop-height');
+
+                    let isDragging = false;
+                    let startX, startY;
+
+                    // Get the natural dimensions of the image
+                    function getNaturalDimensions() {
+                        return {
+                            width: cropSource.naturalWidth,
+                            height: cropSource.naturalHeight
+                        };
+                    }
+
+                    // Get the displayed dimensions of the image
+                    function getDisplayedDimensions() {
+                        const rect = cropSource.getBoundingClientRect();
+                        return {
+                            width: rect.width,
+                            height: rect.height
+                        };
+                    }
+
+                    // Calculate scale factor between displayed and natural dimensions
+                    function getScaleFactor() {
+                        const natural = getNaturalDimensions();
+                        const displayed = getDisplayedDimensions();
+                        return {
+                            x: natural.width / displayed.width,
+                            y: natural.height / displayed.height
+                        };
+                    }
+
+                    // Update the crop selection box
+                    function updateSelection(x, y, width, height) {
+                        cropSelection.style.left = x + 'px';
+                        cropSelection.style.top = y + 'px';
+                        cropSelection.style.width = width + 'px';
+                        cropSelection.style.height = height + 'px';
+                        cropSelection.style.display = 'block';
+
+                        // Update hidden inputs with natural dimensions
+                        const scale = getScaleFactor();
+                        cropXInput.value = Math.round(x * scale.x);
+                        cropYInput.value = Math.round(y * scale.y);
+                        cropWidthInput.value = Math.round(width * scale.x);
+                        cropHeightInput.value = Math.round(height * scale.y);
+                    }
+
+                    // Start selection
+                    cropOverlay.addEventListener('mousedown', function (e) {
+                        isDragging = true;
+                        const rect = cropSource.getBoundingClientRect();
+                        startX = e.clientX - rect.left;
+                        startY = e.clientY - rect.top;
+
+                        updateSelection(startX, startY, 0, 0);
+                    });
+
+                    // Continue selection
+                    cropOverlay.addEventListener('mousemove', function (e) {
+                        if (!isDragging) return;
+
+                        const rect = cropSource.getBoundingClientRect();
+                        const currentX = e.clientX - rect.left;
+                        const currentY = e.clientY - rect.top;
+
+                        const x = Math.min(startX, currentX);
+                        const y = Math.min(startY, currentY);
+                        const width = Math.abs(currentX - startX);
+                        const height = Math.abs(currentY - startY);
+
+                        updateSelection(x, y, width, height);
+                    });
+
+                    // End selection
+                    cropOverlay.addEventListener('mouseup', function () {
+                        isDragging = false;
+                    });
+
+                    // Handle touch events for mobile
+                    cropOverlay.addEventListener('touchstart', function (e) {
+                        e.preventDefault();
+                        const touch = e.touches[0];
+                        const rect = cropSource.getBoundingClientRect();
+                        startX = touch.clientX - rect.left;
+                        startY = touch.clientY - rect.top;
+                        isDragging = true;
+                        updateSelection(startX, startY, 0, 0);
+                    });
+
+                    cropOverlay.addEventListener('touchmove', function (e) {
+                        e.preventDefault();
+                        if (!isDragging) return;
+
+                        const touch = e.touches[0];
+                        const rect = cropSource.getBoundingClientRect();
+                        const currentX = touch.clientX - rect.left;
+                        const currentY = touch.clientY - rect.top;
+
+                        const x = Math.min(startX, currentX);
+                        const y = Math.min(startY, currentY);
+                        const width = Math.abs(currentX - startX);
+                        const height = Math.abs(currentY - startY);
+
+                        updateSelection(x, y, width, height);
+                    });
+
+                    cropOverlay.addEventListener('touchend', function () {
+                        isDragging = false;
+                    });
+
+                    // Reset selection when crop slider is shown
+                    document.querySelector('[data-action="crop"]').addEventListener('click', function () {
+                        cropSelection.style.display = 'none';
+                    });
+                }
+
+                // Initialize the sliders
+                initSliders();
+
+                // Initialize crop functionality when DOM is loaded
+                if (document.getElementById('crop-slider')) {
+                    initCrop();
+                }
+
+                function setRotationValue(value) {
+                    // Update the range input value
+                    const rotateIntensity = document.getElementById('rotate-intensity');
+                    if (rotateIntensity) {
+                        rotateIntensity.value = value;
+
+                        // Update the displayed value
+                        const rotateValueDisplay = document.getElementById('rotate-value');
+                        if (rotateValueDisplay) {
+                            rotateValueDisplay.textContent = value;
+                        }
+
+                        updatePreview('rotate', parseFloat(value));
+                    }
+                }
+
+                // To make this function's scope global
+                window.setRotationValue = setRotationValue;
+
+            });
+
+            // Hide slider containers on cancel button click
+            document.addEventListener('DOMContentLoaded', function () {
+                document.querySelectorAll('.cancel-button').forEach(button => {
+                    button.addEventListener('click', function () {
+                        const target = this.getAttribute('data-target');
+                        const slider = document.querySelector(target);
+                        if (slider) {
+                            slider.style.display = 'none';
+                        }
+
+                        const previewSection = document.getElementById('previewSection');
+                        if (previewSection) {
+                            previewSection.style.display = 'none';
+                            const previewImage = document.getElementById('previewImage');
+                            if (previewImage) {
+                                previewImage.src = ''; // Clear the image source
+                            }
+                            const previewLoading = document.getElementById('previewLoading');
+                            if (previewLoading) {
+                                previewLoading.style.display = 'none'; // Hide the loading indicator
+                            }
+                        }
+                    });
+                });
+            });
+
+
+
+
+        </script>
+</body>
+
+</html>
