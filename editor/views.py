@@ -12,11 +12,33 @@ from django.views.decorators.csrf import csrf_exempt
 import json
 import time
 import mediapipe as mp
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
 from ultralytics import YOLO
 import random
+import urllib.request
+import ssl
 
-mp_selfie_segmentation = mp.solutions.selfie_segmentation
-segment = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
+_SEGMENTATION_MODEL_PATH = os.path.join(os.path.dirname(__file__), 'selfie_segmenter.tflite')
+_segmenter = None
+
+def _get_segmenter():
+    global _segmenter
+    if _segmenter is not None:
+        return _segmenter
+    if not os.path.exists(_SEGMENTATION_MODEL_PATH):
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(
+            'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',
+            context=ssl_ctx
+        ) as response, open(_SEGMENTATION_MODEL_PATH, 'wb') as out_file:
+            out_file.write(response.read())
+    base_options = mp_python.BaseOptions(model_asset_path=_SEGMENTATION_MODEL_PATH)
+    options = mp_vision.ImageSegmenterOptions(base_options=base_options, output_category_mask=True)
+    _segmenter = mp_vision.ImageSegmenter.create_from_options(options)
+    return _segmenter
 
 # Initialize YOLO model
 object_detection_model = YOLO('yolov8n.pt')  # This will download the model automatically
@@ -275,22 +297,21 @@ def process_image(request, photo_id, action):
     elif action == "portrait":
         # Convert PIL Image to OpenCV format
         img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        
-        # Process the image with Mediapipe segmentation
-        results = segment.process(img_cv)
-        
-        # Extract the mask (foreground probability)
-        mask = results.segmentation_mask
-        mask = (mask > 0.5).astype(np.uint8)
-        
-        # Blur the background (using a fixed blur intensity of 55)
+
+        # Process the image with Mediapipe segmentation (new Tasks API)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB))
+        result = _get_segmenter().segment(mp_image)
+        mask = result.category_mask.numpy_view()
+        mask = (mask == 1).astype(np.uint8)  # 1 = person
+
+        # Blur the background
         blur_intensity = 55
         blurred_background = cv2.GaussianBlur(img_cv, (blur_intensity, blur_intensity), 0)
-        
+
         # Combine foreground and blurred background
         output_image = img_cv * mask[:, :, None] + blurred_background * (1 - mask[:, :, None])
         output_image = output_image.astype(np.uint8)
-        
+
         # Convert back to PIL Image
         img = Image.fromarray(cv2.cvtColor(output_image, cv2.COLOR_BGR2RGB))
     elif action == "detect_objects":
